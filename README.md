@@ -1,9 +1,12 @@
 # 🛡️ PromptShield: Zero-Knowledge GenAI Data Loss Prevention (DLP)
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Vercel-black?logo=vercel&logoColor=white)](https://prompt-shield-jade.vercel.app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Chrome_Extension-Manifest_V3-blue.svg)]()
 [![Zero-Knowledge](https://img.shields.io/badge/Architecture-100%25_Local_(Zero_Telemetry)-brightgreen.svg)]()
 
+> **🌐 Live Interactive Demo & Command Center:** **[https://prompt-shield-jade.vercel.app](https://prompt-shield-jade.vercel.app)**
+>
 > A client-side, zero-knowledge security firewall for GenAI platforms (ChatGPT, Claude, Gemini). Automatically detects, masks, and round-trip restores API keys, database credentials, and PII before they leak to external AI models.
 
 ---
