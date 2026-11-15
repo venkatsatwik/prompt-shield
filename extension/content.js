@@ -1,7 +1,5 @@
 /**
- * PromptShield - In-Page Content Script (Enhanced Universal Hook)
- * Intercepts AI prompt boxes, detects credentials, performs round-trip masking,
- * and restores real values when copying responses.
+ * PromptShield - In-Page Content Script (Enhanced with Direct Copy-Button Hook)
  */
 
 (function () {
@@ -9,6 +7,9 @@
 
   const detector = new SecretDetector();
   const masker = new SecretMasker();
+
+  // Load any previously saved session vault
+  loadSessionVault();
 
   let activeAlertCard = null;
   let lastScannedText = '';
@@ -21,38 +22,47 @@
                        host.includes('gemini') ? 'Gemini' :
                        host.includes('deepseek') ? 'DeepSeek' : 'GenAI';
 
-  /**
-   * Universal text getter for both textarea and contenteditable divs (ProseMirror / Lexical)
-   */
+  function saveSessionVault() {
+    try {
+      const obj = {};
+      for (const [k, v] of masker.vault.entries()) {
+        obj[k] = v;
+      }
+      sessionStorage.setItem('promptshield_vault', JSON.stringify(obj));
+    } catch (e) {}
+  }
+
+  function loadSessionVault() {
+    try {
+      const stored = sessionStorage.getItem('promptshield_vault');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        for (const k in parsed) {
+          masker.vault.set(k, parsed[k]);
+        }
+        console.log(`🛡️ PromptShield: Loaded ${masker.vault.size} secret mapping(s) from session.`);
+      }
+    } catch (e) {}
+  }
+
   function getTextFromElement(el) {
     if (!el) return '';
-    if (el.value !== undefined) {
-      return el.value;
-    }
+    if (el.value !== undefined) return el.value;
     return el.innerText || el.textContent || '';
   }
 
-  /**
-   * Universal text setter
-   */
   function setTextToElement(el, text) {
     if (!el) return;
     if (el.value !== undefined) {
       el.value = text;
     } else {
-      // For contenteditable / ProseMirror on ChatGPT & Claude
       el.innerText = text;
     }
-
-    // Dispatch standard React / Vue input events
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
     el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
   }
 
-  /**
-   * Finds the active prompt element or closest input parent
-   */
   function resolveInputTarget(target) {
     if (!target) return null;
     return target.closest('#prompt-textarea, [contenteditable="true"], textarea, rich-textarea textarea') ||
@@ -61,9 +71,6 @@
            document.querySelector('textarea');
   }
 
-  /**
-   * Log anonymized audit event to chrome.storage.local
-   */
   function logAuditEvent(sanitizedCount, secretTypes) {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       chrome.storage.local.get(['auditLogs', 'stats'], (result) => {
@@ -88,9 +95,6 @@
     }
   }
 
-  /**
-   * Shows the PromptShield Floating Alert Card
-   */
   function showAlert(inputEl, scanResult) {
     removeAlert();
     currentTargetEl = inputEl;
@@ -128,10 +132,8 @@
     document.body.appendChild(card);
     activeAlertCard = card;
 
-    // Position directly above the prompt box
     positionAlert(inputEl, card);
 
-    // Button: Sanitize & Auto-Mask
     card.querySelector('#ps-btn-sanitize').addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -140,6 +142,9 @@
       const masked = masker.mask(rawText, scanResult.secrets);
       setTextToElement(inputEl, masked.sanitizedText);
 
+      // Save to tab session memory
+      saveSessionVault();
+
       const secretTypes = [...new Set(scanResult.secrets.map(s => s.category))];
       logAuditEvent(scanResult.totalFound, secretTypes);
 
@@ -147,7 +152,6 @@
       lastScannedText = masked.sanitizedText;
     });
 
-    // Button: Dismiss
     card.querySelector('#ps-btn-dismiss').addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -159,8 +163,6 @@
   function positionAlert(inputEl, card) {
     if (!inputEl || !card) return;
     const rect = inputEl.getBoundingClientRect();
-    
-    // Position card floating above the prompt area
     const cardHeight = card.offsetHeight || 120;
     const topPos = Math.max(10, rect.top - cardHeight - 14);
     const leftPos = Math.max(16, rect.left);
@@ -178,9 +180,6 @@
     }
   }
 
-  /**
-   * Main scan function
-   */
   function checkText(inputEl) {
     if (!inputEl) return;
     const text = getTextFromElement(inputEl);
@@ -196,7 +195,6 @@
 
     const result = detector.scan(text);
     if (result.detected) {
-      console.log("🛡️ PromptShield: Secrets detected!", result.secrets);
       pendingScanResult = result;
       showAlert(inputEl, result);
     } else {
@@ -205,33 +203,25 @@
     }
   }
 
-  // Window resize: re-position if active
   window.addEventListener('resize', () => {
     if (activeAlertCard && currentTargetEl) {
       positionAlert(currentTargetEl, activeAlertCard);
     }
   });
 
-  // Event 1: Typing
   document.addEventListener('input', (e) => {
     const inputEl = resolveInputTarget(e.target);
-    if (inputEl) {
-      checkText(inputEl);
-    }
+    if (inputEl) checkText(inputEl);
   }, true);
 
-  // Event 2: Paste (crucial 50ms delay for contenteditable)
   document.addEventListener('paste', (e) => {
     const inputEl = resolveInputTarget(e.target);
     setTimeout(() => {
       const activeEl = inputEl || resolveInputTarget(document.activeElement);
-      if (activeEl) {
-        checkText(activeEl);
-      }
+      if (activeEl) checkText(activeEl);
     }, 60);
   }, true);
 
-  // Event 3: Enter Key interception
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && pendingScanResult && pendingScanResult.detected) {
       e.preventDefault();
@@ -245,33 +235,97 @@
     }
   }, true);
 
-  // Event 4: Round-Trip Copy Restoration
+  // ========================================================
+  // ROUND-TRIP RESTORATION: Direct ChatGPT Copy-Button Hook
+  // ========================================================
+
+  /**
+   * Check if any text has tokens from our vault and restores them
+   */
+  function tryRestoreText(text) {
+    if (!text || masker.vault.size === 0) return null;
+    let hasToken = false;
+    for (const token of masker.vault.keys()) {
+      if (text.includes(token) || text.includes(token.replace('<', '&lt;').replace('>', '&gt;'))) {
+        hasToken = true;
+        break;
+      }
+    }
+    if (!hasToken) return null;
+    return masker.restore(text);
+  }
+
+  /**
+   * Intercept clicks on ChatGPT / Claude "Copy code" buttons!
+   */
+  document.addEventListener('click', (e) => {
+    // Check if clicked element or parent is a copy button
+    const btn = e.target.closest('button');
+    if (!btn) return;
+
+    const btnText = (btn.innerText || btn.getAttribute('aria-label') || '').toLowerCase();
+    const isCopyButton = btnText.includes('copy') || btn.querySelector('svg');
+
+    if (!isCopyButton) return;
+
+    // Look for the associated code block
+    const codeContainer = btn.closest('pre, .rounded-md, div[class*="code"]') ||
+                          btn.parentElement?.parentElement;
+    if (!codeContainer) return;
+
+    const codeEl = codeContainer.querySelector('code, pre');
+    if (!codeEl) return;
+
+    const rawCode = codeEl.innerText || codeEl.textContent;
+    const restored = tryRestoreText(rawCode);
+
+    if (restored && restored !== rawCode) {
+      // Direct write to clipboard with restored credentials!
+      navigator.clipboard.writeText(restored).then(() => {
+        showCopyToast();
+      }).catch(() => {
+        // Fallback for permissions
+        console.warn('Clipboard write fallback');
+      });
+    }
+  }, true);
+
+  /**
+   * Fallback: Manual Selection Copy (Ctrl + C)
+   */
   document.addEventListener('copy', (e) => {
     const selectedText = window.getSelection().toString();
     if (!selectedText) return;
 
-    if (masker.vault.size > 0 && selectedText.includes('<')) {
-      const restored = masker.restore(selectedText);
-      if (restored !== selectedText) {
-        e.clipboardData.setData('text/plain', restored);
-        e.preventDefault();
-        showCopyToast();
-      }
+    const restored = tryRestoreText(selectedText);
+    if (restored && restored !== selectedText) {
+      e.clipboardData.setData('text/plain', restored);
+      e.preventDefault();
+      showCopyToast();
     }
   });
 
   function showCopyToast() {
+    const existing = document.getElementById('ps-toast');
+    if (existing) existing.remove();
+
     const toast = document.createElement('div');
+    toast.id = 'ps-toast';
     toast.style.cssText = `
-      position: fixed; bottom: 24px; right: 24px; z-index: 2147483647;
-      background: #10b981; color: white; padding: 10px 18px; border-radius: 8px;
-      font-size: 13px; font-weight: 600; font-family: sans-serif;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.4); display: flex; align-items: center; gap: 8px;
+      position: fixed !important; bottom: 28px !important; right: 28px !important; z-index: 2147483647 !important;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+      color: #ffffff !important; padding: 12px 20px !important; border-radius: 10px !important;
+      font-size: 13px !important; font-weight: 700 !important; font-family: -apple-system, sans-serif !important;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5), 0 0 20px rgba(16, 185, 129, 0.4) !important;
+      display: flex !important; align-items: center !important; gap: 8px !important;
+      animation: promptshield-slide-up 0.2s ease !important;
     `;
     toast.innerHTML = '🛡️ PromptShield: Restored original credentials on clipboard!';
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 2500);
+    setTimeout(() => {
+      if (toast) toast.remove();
+    }, 3500);
   }
 
-  console.log("🛡️ PromptShield: Hook attached successfully.");
+  console.log("🛡️ PromptShield: Active with Round-Trip Copy Hook.");
 })();
