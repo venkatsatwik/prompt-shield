@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PromptShield HUD</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="hud-container">
+    <header class="hud-header">
+      <div class="hud-brand">
+        <div class="hud-icon-badge">🛡️</div>
+        <div>
+          <h1>PromptShield</h1>
+          <span class="hud-subtitle">Zero-Knowledge GenAI DLP</span>
+        </div>
+      </div>
+      <div class="hud-status-pill active" id="status-pill">
+        <span class="dot"></span> Active
+      </div>
+    </header>
+
+    <div class="score-card">
+      <div class="score-circle">
+        <span class="score-number" id="privacy-score">100%</span>
+        <span class="score-label">Privacy Score</span>
+      </div>
+      <div class="score-details">
+        <div class="detail-row">
+          <span>Secrets Intercepted:</span>
+          <strong id="stat-blocked">0</strong>
+        </div>
+        <div class="detail-row">
+          <span>External Telemetry:</span>
+          <strong class="text-green">0 Bytes (Local)</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="platform-chips">
+      <span class="chip active">ChatGPT</span>
+      <span class="chip active">Claude</span>
+      <span class="chip active">Gemini</span>
+    </div>
+
+    <div class="hud-footer">
+      <button class="btn-dashboard" id="btn-open-dashboard">
+        📊 Open Full Command Center
+      </button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
