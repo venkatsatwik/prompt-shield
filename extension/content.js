@@ -1,14 +1,52 @@
 /**
- * PromptShield - In-Page Content Script (Enhanced with Direct Copy-Button Hook)
+ * PromptShield - In-Page Content Script & Dashboard Sync Bridge
  */
 
 (function () {
-  console.log("🛡️ PromptShield: Initializing content script on", window.location.hostname);
+  const host = window.location.hostname;
+  console.log("🛡️ PromptShield: Initializing content script on", host);
 
+  // ========================================================
+  // DASHBOARD BRIDGE: Sync with Vercel Web Dashboard
+  // ========================================================
+  if (host.includes('vercel.app') || host.includes('localhost') || host.includes('127.0.0.1')) {
+    console.log("🛡️ PromptShield: Dashboard Bridge connected on", host);
+
+    function syncWithDashboard() {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.get(['stats', 'auditLogs'], (result) => {
+          const stats = result.stats || { totalBlocked: 0, platformCounts: {} };
+          const auditLogs = result.auditLogs || [];
+
+          window.postMessage({
+            type: 'PROMPTSHIELD_SYNC',
+            isInstalled: true,
+            stats: stats,
+            auditLogs: auditLogs
+          }, '*');
+        });
+      }
+    }
+
+    // Listen for PING requests from the Vercel webpage
+    window.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'PROMPTSHIELD_PING') {
+        syncWithDashboard();
+      }
+    });
+
+    // Proactive sync on page load
+    setTimeout(syncWithDashboard, 150);
+    setTimeout(syncWithDashboard, 500);
+    return; // Do not run prompt interception on the dashboard itself
+  }
+
+  // ========================================================
+  // AI PLATFORM DEFENSE (ChatGPT, Claude, Gemini, DeepSeek)
+  // ========================================================
   const detector = new SecretDetector();
   const masker = new SecretMasker();
 
-  // Load any previously saved session vault
   loadSessionVault();
 
   let activeAlertCard = null;
@@ -16,7 +54,6 @@
   let pendingScanResult = null;
   let currentTargetEl = null;
 
-  const host = window.location.hostname;
   const platformName = host.includes('chatgpt') ? 'ChatGPT' :
                        host.includes('claude') ? 'Claude' :
                        host.includes('gemini') ? 'Gemini' :
@@ -79,7 +116,8 @@
 
         logs.unshift({
           id: Date.now(),
-          timestamp: new Date().toISOString(),
+          timestamp: new Date().toLocaleTimeString(),
+          date: new Date().toLocaleDateString(),
           platform: platformName,
           secretsCount: sanitizedCount,
           categories: secretTypes
@@ -142,7 +180,6 @@
       const masked = masker.mask(rawText, scanResult.secrets);
       setTextToElement(inputEl, masked.sanitizedText);
 
-      // Save to tab session memory
       saveSessionVault();
 
       const secretTypes = [...new Set(scanResult.secrets.map(s => s.category))];
@@ -238,10 +275,6 @@
   // ========================================================
   // ROUND-TRIP RESTORATION: Direct ChatGPT Copy-Button Hook
   // ========================================================
-
-  /**
-   * Check if any text has tokens from our vault and restores them
-   */
   function tryRestoreText(text) {
     if (!text || masker.vault.size === 0) return null;
     let hasToken = false;
@@ -255,11 +288,7 @@
     return masker.restore(text);
   }
 
-  /**
-   * Intercept clicks on ChatGPT / Claude "Copy code" buttons!
-   */
   document.addEventListener('click', (e) => {
-    // Check if clicked element or parent is a copy button
     const btn = e.target.closest('button');
     if (!btn) return;
 
@@ -268,7 +297,6 @@
 
     if (!isCopyButton) return;
 
-    // Look for the associated code block
     const codeContainer = btn.closest('pre, .rounded-md, div[class*="code"]') ||
                           btn.parentElement?.parentElement;
     if (!codeContainer) return;
@@ -280,19 +308,14 @@
     const restored = tryRestoreText(rawCode);
 
     if (restored && restored !== rawCode) {
-      // Direct write to clipboard with restored credentials!
       navigator.clipboard.writeText(restored).then(() => {
         showCopyToast();
       }).catch(() => {
-        // Fallback for permissions
         console.warn('Clipboard write fallback');
       });
     }
   }, true);
 
-  /**
-   * Fallback: Manual Selection Copy (Ctrl + C)
-   */
   document.addEventListener('copy', (e) => {
     const selectedText = window.getSelection().toString();
     if (!selectedText) return;

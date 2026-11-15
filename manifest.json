@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PromptShield - GenAI Secret Firewall",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Zero-Knowledge GenAI Data Loss Prevention. Intercepts and masks credentials, API keys, and PII in ChatGPT, Claude, and Gemini.",
   "permissions": [
     "storage",
@@ -13,7 +13,9 @@
     "*://claude.ai/*",
     "*://*.anthropic.com/*",
     "*://gemini.google.com/*",
-    "*://*.deepseek.com/*"
+    "*://*.deepseek.com/*",
+    "https://prompt-shield-jade.vercel.app/*",
+    "http://localhost:*/*"
   ],
   "action": {
     "default_popup": "extension/popup.html",
@@ -27,7 +29,9 @@
         "*://claude.ai/*",
         "*://*.anthropic.com/*",
         "*://gemini.google.com/*",
-        "*://*.deepseek.com/*"
+        "*://*.deepseek.com/*",
+        "https://prompt-shield-jade.vercel.app/*",
+        "http://localhost:*/*"
       ],
       "js": [
         "core/detector.js",
