@@ -23,7 +23,7 @@ Once submitted, these secrets reside on third-party AI training servers and are 
 
 ---
 
-## ⚡ The Solution: PromptShield Trifecta
+## ⚡ The Solution: PromptShield
 
 PromptShield operates directly inside your browser memory with **zero external telemetry**:
 
@@ -89,11 +89,6 @@ PromptShield operates directly inside your browser memory with **zero external t
 
 ## 🚀 Quick Start: Run as a Chrome Extension
 
-1. **Clone this repository:**
-   ```bash
-   git clone https://github.com/venkatsatwik/prompt-shield.git
-   ```
-
 2. **Load into Google Chrome / Edge / Brave:**
    - Open your browser and navigate to `chrome://extensions`.
    - Toggle on **"Developer mode"** in the top-right corner.
@@ -101,20 +96,8 @@ PromptShield operates directly inside your browser memory with **zero external t
    - Select the `prompt-shield` folder.
 
 3. **Test It Live:**
-   - Open [chatgpt.com](https://chatgpt.com) or [claude.ai](https://claude.ai).
-   - Try typing or pasting: `const key = "AKIAIOSFODNN7EXAMPLE";`
-   - Watch the PromptShield security shield intercept it!
 
----
 
-## 🌐 Deploy to Vercel (1-Click Web Playground)
-
-This repository includes a standalone web app version of the Command Center and Interactive Playground.
-
-1. Go to [Vercel](https://vercel.com).
-2. Click **Add New Project** and select your `prompt-shield` repository.
-3. Click **Deploy** (zero configuration needed).
-4. Share your live link (e.g. `https://prompt-shield.vercel.app`) on your portfolio and resume!
 
 ---
 
