@@ -24,25 +24,57 @@ document.addEventListener('DOMContentLoaded', () => {
   let isExtensionConnected = false;
 
   // ========================================================
-  // INSTALL CHROME EXTENSION MODAL
+  // INSTALL CHROME EXTENSION TRIGGER & MODAL
   // ========================================================
-  if (btnAddChrome && installModal) {
-    btnAddChrome.addEventListener('click', () => {
+  function openInstallGuide(shouldDownload = true) {
+    if (installModal) {
       installModal.classList.remove('hidden');
-    });
-
-    if (btnCloseModal) {
-      btnCloseModal.addEventListener('click', () => {
-        installModal.classList.add('hidden');
-      });
     }
+    if (shouldDownload) {
+      // Trigger instant ZIP download
+      const downloadLink = document.createElement('a');
+      downloadLink.href = 'prompt-shield-extension.zip';
+      downloadLink.download = 'prompt-shield-extension.zip';
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      downloadLink.remove();
+    }
+  }
 
+  function closeInstallGuide() {
+    if (installModal) {
+      installModal.classList.add('hidden');
+    }
+  }
+
+  if (btnAddChrome) {
+    btnAddChrome.addEventListener('click', (e) => {
+      e.preventDefault();
+      openInstallGuide(true);
+    });
+  }
+
+  if (btnCloseModal) {
+    btnCloseModal.addEventListener('click', (e) => {
+      e.preventDefault();
+      closeInstallGuide();
+    });
+  }
+
+  if (installModal) {
     installModal.addEventListener('click', (e) => {
       if (e.target === installModal) {
-        installModal.classList.add('hidden');
+        closeInstallGuide();
       }
     });
   }
+
+  // Escape key closes modal
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && installModal && !installModal.classList.contains('hidden')) {
+      closeInstallGuide();
+    }
+  });
 
   // ========================================================
   // REAL-TIME EXTENSION SYNC BRIDGE
@@ -63,13 +95,12 @@ document.addEventListener('DOMContentLoaded', () => {
         statusIndicator.style.borderColor = 'rgba(16, 185, 129, 0.4)';
       }
 
-      // Update Add to Chrome Button to Installed State!
+      // Keep button clickable but show installed state
       if (btnAddChrome) {
-        btnAddChrome.outerHTML = `
-          <div class="btn-chrome-installed">
-            <span>✅ Added to Chrome</span>
-          </div>
+        btnAddChrome.innerHTML = `
+          <span>✅ Extension Synced</span>
         `;
+        btnAddChrome.className = 'btn-chrome-installed';
       }
 
       // Update Metrics from real Chrome Extension storage
