@@ -15,10 +15,34 @@ document.addEventListener('DOMContentLoaded', () => {
   const auditLogList = document.getElementById('audit-log-list');
   const btnClearLogs = document.getElementById('btn-clear-logs');
   const statusIndicator = document.querySelector('.status-indicator');
+  const btnAddChrome = document.getElementById('btn-add-chrome');
+  const installModal = document.getElementById('install-modal');
+  const btnCloseModal = document.getElementById('btn-close-modal');
 
   let currentScanResult = null;
   let blockedCount = 0;
   let isExtensionConnected = false;
+
+  // ========================================================
+  // INSTALL CHROME EXTENSION MODAL
+  // ========================================================
+  if (btnAddChrome && installModal) {
+    btnAddChrome.addEventListener('click', () => {
+      installModal.classList.remove('hidden');
+    });
+
+    if (btnCloseModal) {
+      btnCloseModal.addEventListener('click', () => {
+        installModal.classList.add('hidden');
+      });
+    }
+
+    installModal.addEventListener('click', (e) => {
+      if (e.target === installModal) {
+        installModal.classList.add('hidden');
+      }
+    });
+  }
 
   // ========================================================
   // REAL-TIME EXTENSION SYNC BRIDGE
@@ -37,6 +61,15 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         statusIndicator.style.background = 'rgba(16, 185, 129, 0.15)';
         statusIndicator.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+      }
+
+      // Update Add to Chrome Button to Installed State!
+      if (btnAddChrome) {
+        btnAddChrome.outerHTML = `
+          <div class="btn-chrome-installed">
+            <span>✅ Added to Chrome</span>
+          </div>
+        `;
       }
 
       // Update Metrics from real Chrome Extension storage
