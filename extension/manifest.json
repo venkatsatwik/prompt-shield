@@ -8,7 +8,7 @@
     "activeTab"
   ],
   "icons": {
-    "128": "extension/icons/icon.svg"
+    "128": "icons/icon.svg"
   },
   "host_permissions": [
     "*://chatgpt.com/*",
@@ -21,9 +21,9 @@
     "http://localhost:*/*"
   ],
   "action": {
-    "default_popup": "extension/popup.html",
+    "default_popup": "popup.html",
     "default_title": "PromptShield Security HUD",
-    "default_icon": "extension/icons/icon.svg"
+    "default_icon": "icons/icon.svg"
   },
   "content_scripts": [
     {
@@ -38,12 +38,12 @@
         "http://localhost:*/*"
       ],
       "js": [
-        "core/detector.js",
-        "core/masker.js",
-        "extension/content.js"
+        "../core/detector.js",
+        "../core/masker.js",
+        "content.js"
       ],
       "css": [
-        "extension/content.css"
+        "content.css"
       ],
       "run_at": "document_idle"
     }
