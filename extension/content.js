@@ -1,15 +1,22 @@
 /**
  * PromptShield - In-Page Content Script & Dashboard Sync Bridge
+ * v1.3.0 — Robust MutationObserver + SPA-aware injection for ChatGPT, Claude, Gemini
  */
 
 (function () {
+  'use strict';
+
   const host = window.location.hostname;
   console.log("🛡️ PromptShield: Initializing content script on", host);
 
   // ========================================================
   // DASHBOARD BRIDGE: Sync with Vercel Web Dashboard
   // ========================================================
-  if (host.includes('vercel.app') || host.includes('localhost') || host.includes('127.0.0.1')) {
+  if (
+    host.includes('vercel.app') ||
+    host.includes('localhost') ||
+    host.includes('127.0.0.1')
+  ) {
     console.log("🛡️ PromptShield: Dashboard Bridge connected on", host);
 
     function syncWithDashboard() {
@@ -17,7 +24,6 @@
         chrome.storage.local.get(['stats', 'auditLogs'], (result) => {
           const stats = result.stats || { totalBlocked: 0, platformCounts: {} };
           const auditLogs = result.auditLogs || [];
-
           window.postMessage({
             type: 'PROMPTSHIELD_SYNC',
             isInstalled: true,
@@ -28,14 +34,12 @@
       }
     }
 
-    // Listen for PING requests from the Vercel webpage
     window.addEventListener('message', (e) => {
       if (e.data && e.data.type === 'PROMPTSHIELD_PING') {
         syncWithDashboard();
       }
     });
 
-    // Proactive sync on page load
     setTimeout(syncWithDashboard, 150);
     setTimeout(syncWithDashboard, 500);
     return; // Do not run prompt interception on the dashboard itself
@@ -53,18 +57,20 @@
   let lastScannedText = '';
   let pendingScanResult = null;
   let currentTargetEl = null;
+  let attachedElements = new WeakSet(); // Track already-wired elements
 
-  const platformName = host.includes('chatgpt') ? 'ChatGPT' :
-                       host.includes('claude') ? 'Claude' :
-                       host.includes('gemini') ? 'Gemini' :
-                       host.includes('deepseek') ? 'DeepSeek' : 'GenAI';
+  const platformName =
+    host.includes('chatgpt') ? 'ChatGPT' :
+    host.includes('openai')  ? 'ChatGPT' :
+    host.includes('claude')  ? 'Claude' :
+    host.includes('gemini')  ? 'Gemini' :
+    host.includes('deepseek')? 'DeepSeek' : 'GenAI';
 
+  // ── Vault helpers ────────────────────────────────────────
   function saveSessionVault() {
     try {
       const obj = {};
-      for (const [k, v] of masker.vault.entries()) {
-        obj[k] = v;
-      }
+      for (const [k, v] of masker.vault.entries()) obj[k] = v;
       sessionStorage.setItem('promptshield_vault', JSON.stringify(obj));
     } catch (e) {}
   }
@@ -74,14 +80,13 @@
       const stored = sessionStorage.getItem('promptshield_vault');
       if (stored) {
         const parsed = JSON.parse(stored);
-        for (const k in parsed) {
-          masker.vault.set(k, parsed[k]);
-        }
-        console.log(`🛡️ PromptShield: Loaded ${masker.vault.size} secret mapping(s) from session.`);
+        for (const k in parsed) masker.vault.set(k, parsed[k]);
+        console.log(`🛡️ PromptShield: Loaded ${masker.vault.size} mapping(s) from session.`);
       }
     } catch (e) {}
   }
 
+  // ── Element helpers ──────────────────────────────────────
   function getTextFromElement(el) {
     if (!el) return '';
     if (el.value !== undefined) return el.value;
@@ -93,6 +98,7 @@
     if (el.value !== undefined) {
       el.value = text;
     } else {
+      // For contenteditable: set innerText and dispatch both input events
       el.innerText = text;
     }
     el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -100,14 +106,40 @@
     el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
   }
 
-  function resolveInputTarget(target) {
-    if (!target) return null;
-    return target.closest('#prompt-textarea, [contenteditable="true"], textarea, rich-textarea textarea') ||
-           document.querySelector('#prompt-textarea') ||
-           document.querySelector('[contenteditable="true"]') ||
-           document.querySelector('textarea');
+  // ── Selector: multi-platform input finder ────────────────
+  /**
+   * Returns the best prompt input element on the current page.
+   * Ordered by specificity — ChatGPT, Claude, Gemini, then generic.
+   */
+  function findPromptInput() {
+    const selectors = [
+      // ChatGPT (various versions)
+      '#prompt-textarea',
+      '[data-id="root"][contenteditable="true"]',
+      'div[contenteditable="true"][data-virtualkeyboard]',
+      'div.ProseMirror[contenteditable="true"]',
+      // Claude
+      '[data-testid="compose-message-input"]',
+      '.ProseMirror[contenteditable="true"]',
+      // Gemini
+      'rich-textarea .ql-editor',
+      'div[aria-label*="Enter a prompt"]',
+      'div[aria-label*="Message"]',
+      // Generic fallback
+      '[contenteditable="true"]',
+      'textarea',
+    ];
+
+    for (const sel of selectors) {
+      try {
+        const el = document.querySelector(sel);
+        if (el) return el;
+      } catch (_) {}
+    }
+    return null;
   }
 
+  // ── Audit log & storage ──────────────────────────────────
   function logAuditEvent(sanitizedCount, secretTypes) {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       chrome.storage.local.get(['auditLogs', 'stats'], (result) => {
@@ -122,7 +154,6 @@
           secretsCount: sanitizedCount,
           categories: secretTypes
         });
-
         if (logs.length > 100) logs.pop();
 
         stats.totalBlocked += sanitizedCount;
@@ -133,6 +164,7 @@
     }
   }
 
+  // ── Alert card ───────────────────────────────────────────
   function showAlert(inputEl, scanResult) {
     removeAlert();
     currentTargetEl = inputEl;
@@ -162,29 +194,23 @@
       <div class="promptshield-actions">
         <button class="promptshield-btn-dismiss" id="ps-btn-dismiss">Allow Unmasked</button>
         <button class="promptshield-btn-sanitize" id="ps-btn-sanitize">
-          <span>🎭 Sanitize & Auto-Mask</span>
+          <span>🎭 Sanitize &amp; Auto-Mask</span>
         </button>
       </div>
     `;
 
     document.body.appendChild(card);
     activeAlertCard = card;
-
     positionAlert(inputEl, card);
 
     card.querySelector('#ps-btn-sanitize').addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-
       const rawText = getTextFromElement(inputEl);
       const masked = masker.mask(rawText, scanResult.secrets);
       setTextToElement(inputEl, masked.sanitizedText);
-
       saveSessionVault();
-
-      const secretTypes = [...new Set(scanResult.secrets.map(s => s.category))];
-      logAuditEvent(scanResult.totalFound, secretTypes);
-
+      logAuditEvent(scanResult.totalFound, [...new Set(scanResult.secrets.map(s => s.category))]);
       removeAlert();
       lastScannedText = masked.sanitizedText;
     });
@@ -203,8 +229,7 @@
     const cardHeight = card.offsetHeight || 120;
     const topPos = Math.max(10, rect.top - cardHeight - 14);
     const leftPos = Math.max(16, rect.left);
-    const width = Math.min(rect.width, 700);
-
+    const width = Math.min(rect.width || 500, 700);
     card.style.top = `${topPos}px`;
     card.style.left = `${leftPos}px`;
     card.style.width = `${width}px`;
@@ -217,10 +242,10 @@
     }
   }
 
+  // ── Core scan ────────────────────────────────────────────
   function checkText(inputEl) {
     if (!inputEl) return;
     const text = getTextFromElement(inputEl);
-
     if (text === lastScannedText) return;
     lastScannedText = text;
 
@@ -240,23 +265,42 @@
     }
   }
 
-  window.addEventListener('resize', () => {
-    if (activeAlertCard && currentTargetEl) {
-      positionAlert(currentTargetEl, activeAlertCard);
-    }
-  });
+  // ── Event wiring ─────────────────────────────────────────
+  /**
+   * Attaches input/paste listeners to a specific element.
+   * Uses WeakSet to avoid double-wiring the same element.
+   */
+  function wireElement(el) {
+    if (!el || attachedElements.has(el)) return;
+    attachedElements.add(el);
+    console.log("🛡️ PromptShield: Wired input element →", el.tagName, el.id || el.className.substring(0, 40));
 
+    el.addEventListener('input', () => checkText(el), true);
+    el.addEventListener('paste', () => {
+      setTimeout(() => checkText(el), 80);
+    }, true);
+  }
+
+  /**
+   * Finds the prompt input and wires it. Called on init and by MutationObserver.
+   */
+  function tryWirePromptInput() {
+    const el = findPromptInput();
+    if (el) wireElement(el);
+  }
+
+  // ── Global fallback listeners ────────────────────────────
+  // These catch events on ANY element in case findPromptInput() misses something
   document.addEventListener('input', (e) => {
-    const inputEl = resolveInputTarget(e.target);
-    if (inputEl) checkText(inputEl);
+    const el = findPromptInput() || e.target;
+    if (el) checkText(el);
   }, true);
 
   document.addEventListener('paste', (e) => {
-    const inputEl = resolveInputTarget(e.target);
     setTimeout(() => {
-      const activeEl = inputEl || resolveInputTarget(document.activeElement);
-      if (activeEl) checkText(activeEl);
-    }, 60);
+      const el = findPromptInput() || document.activeElement;
+      if (el) checkText(el);
+    }, 80);
   }, true);
 
   document.addEventListener('keydown', (e) => {
@@ -272,9 +316,39 @@
     }
   }, true);
 
-  // ========================================================
-  // ROUND-TRIP RESTORATION: Direct ChatGPT Copy-Button Hook
-  // ========================================================
+  window.addEventListener('resize', () => {
+    if (activeAlertCard && currentTargetEl) positionAlert(currentTargetEl, activeAlertCard);
+  });
+
+  // ── MutationObserver: SPA & Dynamic DOM ─────────────────
+  /**
+   * ChatGPT is a Single-Page App. When you open a new chat, the editor
+   * is REMOVED and RE-INSERTED into the DOM. The MutationObserver watches
+   * for this and re-wires event listeners automatically.
+   */
+  const observer = new MutationObserver((mutations) => {
+    let shouldCheck = false;
+    for (const mutation of mutations) {
+      if (mutation.addedNodes.length > 0) {
+        shouldCheck = true;
+        break;
+      }
+    }
+    if (shouldCheck) tryWirePromptInput();
+  });
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+
+  // ── Init: wire on load & retry ───────────────────────────
+  tryWirePromptInput();
+  setTimeout(tryWirePromptInput, 500);
+  setTimeout(tryWirePromptInput, 1500);
+  setTimeout(tryWirePromptInput, 3000);
+
+  // ── ROUND-TRIP RESTORATION: Copy-Button Hook ─────────────
   function tryRestoreText(text) {
     if (!text || masker.vault.size === 0) return null;
     let hasToken = false;
@@ -291,14 +365,13 @@
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
-
     const btnText = (btn.innerText || btn.getAttribute('aria-label') || '').toLowerCase();
     const isCopyButton = btnText.includes('copy') || btn.querySelector('svg');
-
     if (!isCopyButton) return;
 
-    const codeContainer = btn.closest('pre, .rounded-md, div[class*="code"]') ||
-                          btn.parentElement?.parentElement;
+    const codeContainer =
+      btn.closest('pre, .rounded-md, div[class*="code"]') ||
+      btn.parentElement?.parentElement;
     if (!codeContainer) return;
 
     const codeEl = codeContainer.querySelector('code, pre');
@@ -306,12 +379,11 @@
 
     const rawCode = codeEl.innerText || codeEl.textContent;
     const restored = tryRestoreText(rawCode);
-
     if (restored && restored !== rawCode) {
       navigator.clipboard.writeText(restored).then(() => {
         showCopyToast();
       }).catch(() => {
-        console.warn('Clipboard write fallback');
+        console.warn('🛡️ PromptShield: Clipboard write fallback needed.');
       });
     }
   }, true);
@@ -319,7 +391,6 @@
   document.addEventListener('copy', (e) => {
     const selectedText = window.getSelection().toString();
     if (!selectedText) return;
-
     const restored = tryRestoreText(selectedText);
     if (restored && restored !== selectedText) {
       e.clipboardData.setData('text/plain', restored);
@@ -331,24 +402,22 @@
   function showCopyToast() {
     const existing = document.getElementById('ps-toast');
     if (existing) existing.remove();
-
     const toast = document.createElement('div');
     toast.id = 'ps-toast';
     toast.style.cssText = `
-      position: fixed !important; bottom: 28px !important; right: 28px !important; z-index: 2147483647 !important;
+      position: fixed !important; bottom: 28px !important; right: 28px !important;
+      z-index: 2147483647 !important;
       background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
-      color: #ffffff !important; padding: 12px 20px !important; border-radius: 10px !important;
-      font-size: 13px !important; font-weight: 700 !important; font-family: -apple-system, sans-serif !important;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5), 0 0 20px rgba(16, 185, 129, 0.4) !important;
+      color: #ffffff !important; padding: 12px 20px !important;
+      border-radius: 10px !important; font-size: 13px !important;
+      font-weight: 700 !important; font-family: -apple-system, sans-serif !important;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5), 0 0 20px rgba(16,185,129,0.4) !important;
       display: flex !important; align-items: center !important; gap: 8px !important;
-      animation: promptshield-slide-up 0.2s ease !important;
     `;
     toast.innerHTML = '🛡️ PromptShield: Restored original credentials on clipboard!';
     document.body.appendChild(toast);
-    setTimeout(() => {
-      if (toast) toast.remove();
-    }, 3500);
+    setTimeout(() => { if (toast) toast.remove(); }, 3500);
   }
 
-  console.log("🛡️ PromptShield: Active with Round-Trip Copy Hook.");
+  console.log("🛡️ PromptShield v1.3.0: Active with MutationObserver + Round-Trip Copy Hook.");
 })();
